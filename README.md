@@ -12,6 +12,17 @@ uv run uvicorn --factory transform_cache.main:create_app
 
 Interactive API docs are served at http://127.0.0.1:8000/docs.
 
+### Docker
+
+```bash
+docker compose up --build -d
+docker compose exec app cache-cli -j '{"list_1": ["a"], "list_2": ["b"]}' -r 3
+```
+
+The SQLite database lives in the `cache-data` volume, so cached results and payload ids
+survive restarts and rebuilds. Settings are environment variables with the `CACHE_`
+prefix (see `docker-compose.yml`).
+
 ## CLI
 
 `cache-cli` sends a payload to the service, reads it back, and prints one JSON line per
