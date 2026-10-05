@@ -7,7 +7,9 @@ authors = [
     { name = "Yonas Mekonnen", email = "myonas886@gmail.com" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "pydantic>=2.13.5",
+]
 
 [build-system]
 requires = ["uv_build>=0.10.8,<0.11.0"]
@@ -34,6 +36,7 @@ select = [
 
 [tool.mypy]
 strict = true
+plugins = ["pydantic.mypy"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

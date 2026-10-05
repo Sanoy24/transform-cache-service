@@ -12,6 +12,6 @@ Requires [uv](https://docs.astral.sh/uv/).
 uv sync                 # create .venv and install dependencies
 uv run ruff check .     # lint
 uv run ruff format .    # format
-uv run mypy src         # type check
+uv run mypy src tests   # type check
 uv run pytest           # tests
 ```
