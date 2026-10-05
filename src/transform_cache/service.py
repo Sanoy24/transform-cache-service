@@ -25,11 +25,12 @@ class PayloadResult:
 class PayloadService:
     """Creates and reads payloads, reusing cached transformer results.
 
-    Strings found in the cache at lookup time are never re-transformed. Two
-    concurrent requests that miss the same string may still both transform it.
+    Cached strings are never re-transformed, and concurrent requests missing the
+    same string share one in-flight "transform and cache" call. Deduplication is
+    per process; separate replicas would need a distributed lock.
 
-    Meant to be shared across requests: the concurrency limit only works if all
-    requests go through the same semaphore.
+    Meant to be shared across requests: the concurrency limit and in-flight
+    deduplication only work if all requests go through the same instance.
     """
 
     def __init__(
@@ -41,6 +42,7 @@ class PayloadService:
         self._session_factory = session_factory
         self._transformer = transformer
         self._semaphore = asyncio.Semaphore(max_concurrency)
+        self._in_flight: dict[str, asyncio.Task[str]] = {}
 
     async def create_payload(
         self, list_1: Sequence[str], list_2: Sequence[str]
@@ -57,8 +59,7 @@ class PayloadService:
             results = await self._load_cached(session, unique_inputs)
 
         misses = list(unique_inputs - results.keys())
-        new_results = dict(zip(misses, await self._transform_all(misses), strict=True))
-        results |= new_results
+        results |= dict(zip(misses, await self._transform_all(misses), strict=True))
 
         output = build_output(
             [results[value] for value in list_1], [results[value] for value in list_2]
@@ -66,14 +67,6 @@ class PayloadService:
         new_id = uuid.uuid4()
 
         async with self._session_factory() as session, session.begin():
-            if new_results:
-                # Another request may have cached the same strings meanwhile;
-                # the transformer is deterministic, so skipping them is safe.
-                await session.exec(
-                    insert(TransformCacheEntry)
-                    .values([{"input": k, "output": v} for k, v in new_results.items()])
-                    .on_conflict_do_nothing()
-                )
             await session.exec(
                 insert(Payload)
                 .values(id=new_id, payload_key=key, output=output)
@@ -114,5 +107,26 @@ class PayloadService:
         return await asyncio.gather(*(self._transform(value) for value in values))
 
     async def _transform(self, value: str) -> str:
+        # Join a call already running for this value instead of starting another.
+        task = self._in_flight.get(value)
+        if task is None:
+            task = asyncio.create_task(self._transform_and_cache(value))
+            self._in_flight[value] = task
+            task.add_done_callback(lambda _: self._in_flight.pop(value, None))
+        # Shield so one cancelled request doesn't cancel the call others await.
+        return await asyncio.shield(task)
+
+    async def _transform_and_cache(self, value: str) -> str:
         async with self._semaphore:
-            return await self._transformer.transform(value)
+            output = await self._transformer.transform(value)
+        # Persist before the task completes and leaves _in_flight, so a request
+        # arriving afterwards finds the value in the cache instead of a gap.
+        async with self._session_factory() as session, session.begin():
+            # A concurrent process may have cached it already; the transformer
+            # is deterministic, so skipping the duplicate is safe.
+            await session.exec(
+                insert(TransformCacheEntry)
+                .values(input=value, output=output)
+                .on_conflict_do_nothing()
+            )
+        return output
