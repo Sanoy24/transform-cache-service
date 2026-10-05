@@ -23,6 +23,49 @@ The SQLite database lives in the `cache-data` volume, so cached results and payl
 survive restarts and rebuilds. Settings are environment variables with the `CACHE_`
 prefix (see `docker-compose.yml`).
 
+### Configuration
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `CACHE_DATABASE_URL` | `sqlite+aiosqlite:///./cache.db` | SQLite database location |
+| `CACHE_TRANSFORMER_LATENCY_SECONDS` | `0.5` | Simulated cost of one transformer call |
+| `CACHE_TRANSFORMER_MAX_CONCURRENCY` | `10` | Simultaneous transformer calls allowed |
+
+## API
+
+| Request | Response |
+|---|---|
+| `POST /payload` with `{"list_1": [...], "list_2": [...]}` | `201` `{"id", "message"}` for a new payload, `200` with the existing id for an input seen before |
+| `GET /payload/{id}` | `200` `{"output": "..."}`, `404` if unknown |
+| `GET /health` | `200` `{"status": "ok"}` |
+
+Invalid input (lists of different lengths, non-string items, unknown fields, malformed
+id) is rejected with `422`.
+
+## How it works
+
+`POST /payload` in `PayloadService.create_payload`:
+
+1. Hash the ordered input into a payload key. If a payload with that key exists, return
+   its id: no transformer calls.
+2. Deduplicate the strings and load their cached results in one query.
+3. Transform only the misses, concurrently, under a concurrency limit. A string already
+   being transformed for another request is awaited, not transformed again. Each result
+   is cached before the call completes.
+4. Interleave the results into the output and store the payload. Unique constraints and
+   `INSERT ... ON CONFLICT DO NOTHING` make concurrent identical requests converge on one
+   stored payload.
+
+| Module | Role |
+|---|---|
+| `main.py` | FastAPI app, routes, lifespan |
+| `service.py` | Caching and payload logic |
+| `payload.py` | Pure rules: interleaving, payload key |
+| `transformer.py` | Transformer interface and the simulated one |
+| `models.py`, `db.py` | Tables and database setup |
+| `schemas.py` | API request/response models, also used by the CLI |
+| `cli.py` | `cache-cli` |
+
 ## CLI
 
 `cache-cli` sends a payload to the service, reads it back, and prints one JSON line per
@@ -48,7 +91,8 @@ uv run cache-cli --input body.json --output results.jsonl
 Arguments are defined and validated by Pydantic Settings.
 
 Exactly one of `--input` and `--json` is required. The body is validated before any
-request is sent. Exit codes: 0 success, 1 request failed, 2 invalid arguments or input.
+request is sent. Exit codes: 0 success, 1 request failed or unexpected response, 2 invalid arguments
+or input.
 
 ## Development
 
@@ -61,6 +105,11 @@ uv run ruff format .    # format
 uv run mypy src tests   # type check
 uv run pytest           # tests
 ```
+
+`tests/unit` covers pure logic and parsing. `tests/integration` runs against a real
+SQLite file: the service, the API through FastAPI's test client, and the CLI against the
+app in-process. A counting fake transformer lets tests assert how many transformer calls
+were made, which is what the caching exists to minimize.
 
 HTTP calls use `httpx2`, the Pydantic-maintained successor of `httpx`: Starlette's test
 client requires it and deprecates `httpx`, so one HTTP library serves the CLI and the tests.
