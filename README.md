@@ -32,21 +32,20 @@ transformer calls.
 
 ```bash
 uv run cache-cli --json '{"list_1": ["a", "b"], "list_2": ["c", "d"]}' --repeat 3
-echo '{"list_1": ["a"], "list_2": ["b"]}' | uv run cache-cli -h http://127.0.0.1:8000 -i -
+echo '{"list_1": ["a"], "list_2": ["b"]}' | uv run cache-cli -H http://127.0.0.1:8000 -i -
 uv run cache-cli --input body.json --output results.jsonl
 ```
 
 | Flag                     | Meaning                                            |
 | ------------------------ | -------------------------------------------------- |
-| `-h`, `--host URL`       | Service base URL (default `http://127.0.0.1:8000`) |
+| `-H`, `--host URL`       | Service base URL (default `http://127.0.0.1:8000`) |
 | `-r`, `--repeat N`       | Number of POST + GET iterations (default 1)        |
 | `-i`, `--input FILE\|-`  | Request body from a file, or `-` for stdin         |
 | `-j`, `--json JSON`      | Request body as an argument                        |
 | `-o`, `--output FILE\|-` | Where to write results, `-` for stdout (default)   |
-| `--help`                 | Show help                                          |
+| `-h`, `--help`           | Show help                                          |
 
-Arguments are defined and validated by Pydantic Settings. It is given a plain argparse
-parser only so that `-h` can mean `--host`; its default parser reserves `-h` for help.
+Arguments are defined and validated by Pydantic Settings.
 
 Exactly one of `--input` and `--json` is required. The body is validated before any
 request is sent. Exit codes: 0 success, 1 request failed, 2 invalid arguments or input.
@@ -70,8 +69,10 @@ client requires it and deprecates `httpx`, so one HTTP library serves the CLI an
 
 Decisions:
 
-- **Payloads are stored as database rows, not files.** The generated output is stored
-  with its id, so reading a payload never calls the transformer again.
+- **Payloads are stored as database rows, not files**. The
+  generated output is stored with its id, so reading a payload never calls the
+  transformer again.
+- **The CLI uses `-H` for `--host` and `-h` for help**.
 - **`POST /payload` returns 201 for a new payload and 200 for an input seen before.**
   Both return the same body shape with the payload id.
 - **Payload identity is the exact ordered pair of lists.** Reordering items or swapping
@@ -81,7 +82,6 @@ Decisions:
   caching its results valid. Upstream failure handling (retries, error mapping, partial
   results) is out of scope; an unexpected error surfaces as a 500.
 - **Empty lists are valid** and produce an empty output.
-- **`-h` means `--host` in the CLI; help is `--help` only.**
 - **One CLI iteration is a full POST then GET**, so each line reports both the id and the
   stored output.
 - **CLI results are JSON Lines**, one object per iteration, so they can be streamed and

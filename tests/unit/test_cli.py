@@ -20,7 +20,7 @@ def test_defaults() -> None:
 
 def test_short_flags() -> None:
     args = parse_args(
-        ["-h", "http://example.com:9000", "-r", "3", "-i", "-", "-o", "x"]
+        ["-H", "http://example.com:9000", "-r", "3", "-i", "-", "-o", "x"]
     )
 
     assert str(args.host) == "http://example.com:9000/"
@@ -33,12 +33,13 @@ def test_json_short_flag() -> None:
     assert parse_args(["-j", BODY]).json_input == BODY
 
 
-def test_help_is_long_flag_only(capsys: pytest.CaptureFixture[str]) -> None:
+@pytest.mark.parametrize("flag", ["-h", "--help"])
+def test_help_flags(flag: str, capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as exit_info:
-        parse_args(["--help"])
+        parse_args([flag])
 
     assert exit_info.value.code == 0
-    assert "--host, -h" in capsys.readouterr().out
+    assert "--host, -H" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize(

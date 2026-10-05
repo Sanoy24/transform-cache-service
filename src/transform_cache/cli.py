@@ -1,6 +1,5 @@
 """cache-cli: send payloads to the service and report what came back."""
 
-import argparse
 import json
 import sys
 import time
@@ -13,7 +12,6 @@ from pydantic import AnyHttpUrl, Field, model_validator
 from pydantic_settings import (
     BaseSettings,
     CliApp,
-    CliSettingsSource,
     PydanticBaseSettingsSource,
     SettingsConfigDict,
 )
@@ -29,10 +27,13 @@ class CliArgs(BaseSettings):
     """Send a payload to the caching service, read it back, and report the result."""
 
     model_config = SettingsConfigDict(
+        cli_prog_name="cache-cli",
         cli_hide_none_type=True,
+        # Otherwise arguments are lowercased before parsing and -H becomes -h.
+        case_sensitive=True,
         # Keyed by flag name (the alias for "json"), as pydantic-settings expects.
         cli_shortcuts={
-            "host": "h",
+            "host": "H",
             "repeat": "r",
             "input": "i",
             "json": "j",
@@ -73,12 +74,7 @@ class CliArgs(BaseSettings):
 
 
 def parse_args(argv: list[str]) -> CliArgs:
-    # Our own parser because pydantic-settings' default one reserves -h for help,
-    # while the required interface uses -h for --host; help stays on --help.
-    parser = argparse.ArgumentParser(prog="cache-cli", add_help=False)
-    parser.add_argument("--help", action="help", help="show this help and exit")
-    source: CliSettingsSource[CliArgs] = CliSettingsSource(CliArgs, root_parser=parser)
-    return CliApp.run(CliArgs, cli_args=argv, cli_settings_source=source)
+    return CliApp.run(CliArgs, cli_args=argv)
 
 
 def read_body(args: CliArgs, stdin: TextIO) -> PayloadCreate:
