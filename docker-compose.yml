@@ -1,0 +1,14 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      CACHE_TRANSFORMER_LATENCY_SECONDS: "0.5"
+      CACHE_TRANSFORMER_MAX_CONCURRENCY: "10"
+    volumes:
+      # Keeps the cache and payloads across container restarts and rebuilds.
+      - cache-data:/data
+
+volumes:
+  cache-data:

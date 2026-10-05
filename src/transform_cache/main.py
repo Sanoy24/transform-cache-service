@@ -32,6 +32,12 @@ ServiceDep = Annotated[PayloadService, Depends(get_service)]
 router = APIRouter()
 
 
+@router.get("/health")
+async def health() -> dict[str, str]:
+    """Liveness probe for the container health check."""
+    return {"status": "ok"}
+
+
 @router.post(
     "/payload",
     status_code=status.HTTP_201_CREATED,

@@ -138,3 +138,10 @@ def test_unknown_payload_returns_404(client: TestClient) -> None:
 
 def test_malformed_payload_id_is_rejected(client: TestClient) -> None:
     assert client.get("/payload/not-a-uuid").status_code == 422
+
+
+def test_health(client: TestClient) -> None:
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
