@@ -1,5 +1,6 @@
 """Request and response models of the public API."""
 
+import uuid
 from typing import Self
 
 from pydantic import BaseModel, ConfigDict, model_validator
@@ -20,3 +21,12 @@ class PayloadCreate(BaseModel):
         if len(self.list_1) != len(self.list_2):
             raise ValueError("list_1 and list_2 must have the same length")
         return self
+
+
+class PayloadCreated(BaseModel):
+    id: uuid.UUID
+    message: str
+
+
+class PayloadOutput(BaseModel):
+    output: str

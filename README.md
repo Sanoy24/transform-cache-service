@@ -4,6 +4,14 @@ A FastAPI microservice that builds payloads by interleaving two lists of transfo
 strings. Transformer results are cached in SQLite so each distinct string is transformed
 only once, and identical requests reuse the same payload identifier.
 
+## Running
+
+```bash
+uv run uvicorn --factory transform_cache.main:create_app
+```
+
+Interactive API docs are served at http://127.0.0.1:8000/docs.
+
 ## Development
 
 Requires [uv](https://docs.astral.sh/uv/).
