@@ -16,7 +16,7 @@ from pydantic_settings import (
     SettingsConfigDict,
 )
 
-from transform_cache.schemas import PayloadCreate
+from transform_cache.schemas import PayloadCreate, PayloadCreated, PayloadOutput
 
 STDIO = "-"
 # Generous: a large uncached payload costs many transformer calls on the server.
@@ -100,14 +100,16 @@ def run(body: PayloadCreate, repeat: int, client: httpx2.Client, out: TextIO) ->
         started = time.perf_counter()
         created = client.post("/payload", json=body.model_dump())
         created.raise_for_status()
-        payload_id = created.json()["id"]
-        read = client.get(f"/payload/{payload_id}")
+        # Parsed with the API's own response models, so an unexpected body is a
+        # clear error instead of a KeyError deep in this loop.
+        payload = PayloadCreated.model_validate_json(created.content)
+        read = client.get(f"/payload/{payload.id}")
         read.raise_for_status()
         record: dict[str, Any] = {
             "iteration": iteration,
-            "id": payload_id,
+            "id": str(payload.id),
             "status": created.status_code,
-            "output": read.json()["output"],
+            "output": PayloadOutput.model_validate_json(read.content).output,
             "elapsed_ms": round((time.perf_counter() - started) * 1000, 1),
         }
         out.write(json.dumps(record) + "\n")
@@ -135,5 +137,8 @@ def main(argv: list[str] | None = None) -> int:
             run(body, args.repeat, client, out)
         except httpx2.HTTPError as error:
             print(f"cache-cli: request failed: {error}", file=sys.stderr)
+            return 1
+        except ValueError as error:  # response did not match the API contract
+            print(f"cache-cli: unexpected response: {error}", file=sys.stderr)
             return 1
     return 0

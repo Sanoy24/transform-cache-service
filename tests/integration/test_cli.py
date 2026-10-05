@@ -100,3 +100,29 @@ def test_main_reads_stdin_and_writes_stdout(
     assert exit_code == 0
     [line] = capsys.readouterr().out.splitlines()
     assert json.loads(line)["output"] == SPEC_OUTPUT
+
+
+@pytest.mark.parametrize(
+    "content",
+    [b'{"unexpected": true}', b"<html>not json</html>"],
+    ids=["wrong-shape", "not-json"],
+)
+def test_main_reports_unexpected_response(
+    content: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(201, content=content)
+
+    real_client = httpx2.Client
+    monkeypatch.setattr(
+        httpx2,
+        "Client",
+        lambda **kwargs: real_client(transport=httpx2.MockTransport(respond), **kwargs),
+    )
+
+    exit_code = cli.main(["--json", json.dumps(SPEC_INPUT)])
+
+    assert exit_code == 1
+    assert "cache-cli: unexpected response" in capsys.readouterr().err
