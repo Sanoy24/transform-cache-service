@@ -1,38 +1,12 @@
 import uuid
-from collections.abc import Iterator
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.examples import SPEC_INPUT, SPEC_OUTPUT
 from tests.fakes import CountingTransformer
 from transform_cache.config import Settings
 from transform_cache.main import create_app
-
-
-@pytest.fixture
-def transformer() -> CountingTransformer:
-    return CountingTransformer()
-
-
-@pytest.fixture
-def settings(tmp_path: Path) -> Settings:
-    return Settings(database_url=f"sqlite+aiosqlite:///{tmp_path / 'api.db'}")
-
-
-@pytest.fixture
-def client(
-    settings: Settings, transformer: CountingTransformer
-) -> Iterator[TestClient]:
-    # The context manager runs the app's lifespan: tables, engine, service.
-    with TestClient(create_app(settings, transformer)) as client:
-        yield client
-
-
-SPEC_INPUT = {
-    "list_1": ["first string", "second string", "third string"],
-    "list_2": ["other string", "another string", "last string"],
-}
 
 
 def test_create_then_read_spec_example(client: TestClient) -> None:
@@ -46,10 +20,7 @@ def test_create_then_read_spec_example(client: TestClient) -> None:
     read = client.get(f"/payload/{payload_id}")
 
     assert read.status_code == 200
-    assert read.json() == {
-        "output": "FIRST STRING, OTHER STRING, SECOND STRING, "
-        "ANOTHER STRING, THIRD STRING, LAST STRING"
-    }
+    assert read.json() == {"output": SPEC_OUTPUT}
 
 
 def test_repeated_post_returns_existing_id(

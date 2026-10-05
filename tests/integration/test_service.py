@@ -5,14 +5,10 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from tests.examples import SPEC_INPUT, SPEC_OUTPUT
 from tests.fakes import CountingTransformer
 from transform_cache.models import TransformCacheEntry
 from transform_cache.service import PayloadService
-
-
-@pytest.fixture
-def transformer() -> CountingTransformer:
-    return CountingTransformer()
 
 
 @pytest.fixture
@@ -26,16 +22,10 @@ def service(
 async def test_spec_example(
     service: PayloadService, transformer: CountingTransformer
 ) -> None:
-    result = await service.create_payload(
-        ["first string", "second string", "third string"],
-        ["other string", "another string", "last string"],
-    )
+    result = await service.create_payload(SPEC_INPUT["list_1"], SPEC_INPUT["list_2"])
 
     assert result.created
-    assert await service.get_payload_output(result.id) == (
-        "FIRST STRING, OTHER STRING, SECOND STRING, "
-        "ANOTHER STRING, THIRD STRING, LAST STRING"
-    )
+    assert await service.get_payload_output(result.id) == SPEC_OUTPUT
     assert len(transformer.calls) == 6
 
 

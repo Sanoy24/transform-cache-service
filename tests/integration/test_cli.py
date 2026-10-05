@@ -1,44 +1,17 @@
 import io
 import json
-from collections.abc import Iterator
 from pathlib import Path
 
 import httpx2
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.examples import SPEC_INPUT, SPEC_OUTPUT
 from tests.fakes import CountingTransformer
 from transform_cache import cli
 from transform_cache.config import Settings
 from transform_cache.main import create_app
 from transform_cache.schemas import PayloadCreate
-
-SPEC_INPUT = {
-    "list_1": ["first string", "second string", "third string"],
-    "list_2": ["other string", "another string", "last string"],
-}
-SPEC_OUTPUT = (
-    "FIRST STRING, OTHER STRING, SECOND STRING, "
-    "ANOTHER STRING, THIRD STRING, LAST STRING"
-)
-
-
-@pytest.fixture
-def transformer() -> CountingTransformer:
-    return CountingTransformer()
-
-
-@pytest.fixture
-def settings(tmp_path: Path) -> Settings:
-    return Settings(database_url=f"sqlite+aiosqlite:///{tmp_path / 'cli.db'}")
-
-
-@pytest.fixture
-def client(
-    settings: Settings, transformer: CountingTransformer
-) -> Iterator[TestClient]:
-    with TestClient(create_app(settings, transformer)) as client:
-        yield client
 
 
 def test_repeated_runs_reuse_payload_and_cache(
@@ -127,3 +100,29 @@ def test_main_reads_stdin_and_writes_stdout(
     assert exit_code == 0
     [line] = capsys.readouterr().out.splitlines()
     assert json.loads(line)["output"] == SPEC_OUTPUT
+
+
+@pytest.mark.parametrize(
+    "content",
+    [b'{"unexpected": true}', b"<html>not json</html>"],
+    ids=["wrong-shape", "not-json"],
+)
+def test_main_reports_unexpected_response(
+    content: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(201, content=content)
+
+    real_client = httpx2.Client
+    monkeypatch.setattr(
+        httpx2,
+        "Client",
+        lambda **kwargs: real_client(transport=httpx2.MockTransport(respond), **kwargs),
+    )
+
+    exit_code = cli.main(["--json", json.dumps(SPEC_INPUT)])
+
+    assert exit_code == 1
+    assert "cache-cli: unexpected response" in capsys.readouterr().err

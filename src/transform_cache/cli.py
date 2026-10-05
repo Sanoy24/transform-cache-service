@@ -1,6 +1,5 @@
 """cache-cli: send payloads to the service and report what came back."""
 
-import argparse
 import json
 import sys
 import time
@@ -13,12 +12,11 @@ from pydantic import AnyHttpUrl, Field, model_validator
 from pydantic_settings import (
     BaseSettings,
     CliApp,
-    CliSettingsSource,
     PydanticBaseSettingsSource,
     SettingsConfigDict,
 )
 
-from transform_cache.schemas import PayloadCreate
+from transform_cache.schemas import PayloadCreate, PayloadCreated, PayloadOutput
 
 STDIO = "-"
 # Generous: a large uncached payload costs many transformer calls on the server.
@@ -29,10 +27,13 @@ class CliArgs(BaseSettings):
     """Send a payload to the caching service, read it back, and report the result."""
 
     model_config = SettingsConfigDict(
+        cli_prog_name="cache-cli",
         cli_hide_none_type=True,
+        # Otherwise arguments are lowercased before parsing and -H becomes -h.
+        case_sensitive=True,
         # Keyed by flag name (the alias for "json"), as pydantic-settings expects.
         cli_shortcuts={
-            "host": "h",
+            "host": "H",
             "repeat": "r",
             "input": "i",
             "json": "j",
@@ -73,12 +74,7 @@ class CliArgs(BaseSettings):
 
 
 def parse_args(argv: list[str]) -> CliArgs:
-    # Our own parser because pydantic-settings' default one reserves -h for help,
-    # while the required interface uses -h for --host; help stays on --help.
-    parser = argparse.ArgumentParser(prog="cache-cli", add_help=False)
-    parser.add_argument("--help", action="help", help="show this help and exit")
-    source: CliSettingsSource[CliArgs] = CliSettingsSource(CliArgs, root_parser=parser)
-    return CliApp.run(CliArgs, cli_args=argv, cli_settings_source=source)
+    return CliApp.run(CliArgs, cli_args=argv)
 
 
 def read_body(args: CliArgs, stdin: TextIO) -> PayloadCreate:
@@ -104,14 +100,16 @@ def run(body: PayloadCreate, repeat: int, client: httpx2.Client, out: TextIO) ->
         started = time.perf_counter()
         created = client.post("/payload", json=body.model_dump())
         created.raise_for_status()
-        payload_id = created.json()["id"]
-        read = client.get(f"/payload/{payload_id}")
+        # Parsed with the API's own response models, so an unexpected body is a
+        # clear error instead of a KeyError deep in this loop.
+        payload = PayloadCreated.model_validate_json(created.content)
+        read = client.get(f"/payload/{payload.id}")
         read.raise_for_status()
         record: dict[str, Any] = {
             "iteration": iteration,
-            "id": payload_id,
+            "id": str(payload.id),
             "status": created.status_code,
-            "output": read.json()["output"],
+            "output": PayloadOutput.model_validate_json(read.content).output,
             "elapsed_ms": round((time.perf_counter() - started) * 1000, 1),
         }
         out.write(json.dumps(record) + "\n")
@@ -139,5 +137,8 @@ def main(argv: list[str] | None = None) -> int:
             run(body, args.repeat, client, out)
         except httpx2.HTTPError as error:
             print(f"cache-cli: request failed: {error}", file=sys.stderr)
+            return 1
+        except ValueError as error:  # response did not match the API contract
+            print(f"cache-cli: unexpected response: {error}", file=sys.stderr)
             return 1
     return 0
