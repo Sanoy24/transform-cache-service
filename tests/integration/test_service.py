@@ -45,7 +45,7 @@ async def test_duplicates_in_one_request_are_transformed_once(
     result = await service.create_payload(["a", "a", "b"], ["b", "a", "c"])
 
     assert sorted(transformer.calls) == ["a", "b", "c"]
-    # Every occurrence is still in the output.
+    # Deduplication only limits transformer calls; the output keeps every item.
     assert await service.get_payload_output(result.id) == "A, B, A, A, B, C"
 
 

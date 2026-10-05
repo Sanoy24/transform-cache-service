@@ -107,7 +107,8 @@ class PayloadService:
         return await asyncio.gather(*(self._transform(value) for value in values))
 
     async def _transform(self, value: str) -> str:
-        # Join a call already running for this value instead of starting another.
+        # Concurrent requests missing the same value share one call, so the
+        # transformer runs once per value rather than once per request.
         task = self._in_flight.get(value)
         if task is None:
             task = asyncio.create_task(self._transform_and_cache(value))
